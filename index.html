@@ -319,12 +319,7 @@
 (function () {
   'use strict';
 
-  /* =======================================================================
-     1. MIDI PARSER
-     Standard MIDI File (SMF) format 0/1 parser. Produces a flat, time-sorted
-     event list in seconds, resolving tempo changes against the header's
-     ticks-per-quarter-note.
-     ======================================================================= */
+  /* MIDI PARSER */
   const MidiParser = (function () {
     function readVarLen(bytes, pos) {
       let value = 0, b;
@@ -426,7 +421,7 @@
             const lsb = bytes[pos++], msb = bytes[pos++];
             events.push({ tick, type: 'pitchBend', channel, bend: ((msb << 7) | lsb) - 8192 });
           } else {
-            break; // unknown status — bail out of this track rather than loop forever
+            break; // unknown status
           }
         }
         rawTracks.push(events);
@@ -466,24 +461,12 @@
     return { parseMidi };
   })();
 
-  /* =======================================================================
-     2. FALLBACK SYNTH ENGINE
-     Plain WebAudio oscillator synth. Same interface as PdWasmEngine below,
-     used whenever a compiled patch isn't found, so the page always makes
-     sound.
-     ======================================================================= */
+  /* FALLBACK SYNTH ENGINE */
   class FallbackSynthEngine {
     constructor() {
       this.name = 'fallback synth';
       this.isFallback = true;
-      // voicesByKey: the *current* voice for a given channel+note, used to
-      // resolve an incoming noteOff to the right oscillator.
       this.voicesByKey = new Map();
-      // allVoices: every voice that's still live, full stop. A note can be
-      // retriggered (a new noteOn for the same pitch before its noteOff
-      // arrives) — the old voice gets overwritten in voicesByKey but must
-      // still be tracked somewhere, or it leaks and drones on forever,
-      // invisible to allNotesOff(). This set is that somewhere.
       this.allVoices = new Set();
     }
     async init(audioContext) {
@@ -499,8 +482,7 @@
       const t = time != null ? time : this.ctx.currentTime;
       const key = this._key(channel, note);
 
-      // Retrigger: a voice is already sounding at this pitch. Cut it off
-      // quickly rather than letting it get silently orphaned.
+      // Retrigger: if a voice is already sounding at this pitch. Cut it off quickly
       const existing = this.voicesByKey.get(key);
       if (existing) this._release(existing, t, 0.015);
 
@@ -545,8 +527,6 @@
     pitchBend() {}
     allNotesOff() {
       const now = this.ctx.currentTime;
-      // Snapshot first: _release -> the 'ended' listener can mutate
-      // allVoices mid-iteration otherwise.
       const voices = Array.from(this.allVoices);
       voices.forEach(voice => this._release(voice, now, 0.05));
       this.allVoices.clear();
@@ -554,41 +534,10 @@
     }
   }
 
-  /* =======================================================================
-     3. PD-WASM ENGINE (hvcc / Heavy)
-     -----------------------------------------------------------------------
-     hvcc's WebAudio/JS generator (https://wasted-audio.github.io/hvcc/) does
-     NOT compile a .pd file to wasm in the browser — you run hvcc offline:
+  /* PD-WASM ENGINE (hvcc / Heavy) */
 
-         hvcc patch.pd -g js -o build/
-
-     ...which emits an Emscripten module (here: pd/patch.js) exposing a
-     global factory function, conventionally named "<patchName>_Module".
-     Calling that factory gives you a heavyModule with an AudioLibLoader
-     class on it. That loader is what actually talks to the patch:
-
-         const heavyModule = await patch_Module();
-         const loader = new heavyModule.AudioLibLoader();
-         await loader.init({ blockSize: 128, webAudioContext: audioCtx, ... });
-         loader.start();
-         loader.webAudioWorklet.connect(audioCtx.destination);
-
-     Sending values IN to the patch is done by name, matching whatever
-     [r somename] / [receive somename] objects exist in your .pd patch —
-     there's no generic "send a MIDI note" call, because Heavy doesn't know
-     your patch's structure beyond its named receivers. Two loader shapes
-     exist depending on hvcc/export version, so we try both:
-
-         loader.sendFloatParameterToWorklet(name, value)   // newer, AudioWorklet-based
-         loader.audiolib.setFloatParameter(name, value)    // older, ScriptProcessor-based
-
-     This engine assumes your patch exposes receivers called "note",
-     "velocity", "gate", "bend", "program", and "cc0".."cc127" — rename the
-     RECEIVER_NAMES below to match your actual patch.
-     ======================================================================= */
-
-  const PATCH_JS_URL = 'pd/patch.js';       // hvcc's exported Emscripten glue file
-  const PATCH_MODULE_FACTORY = 'patch_Module'; // must match hvcc's generated global
+  const PATCH_JS_URL = 'pd/patch.js';       // hvcc exported Emscripten glue file
+  const PATCH_MODULE_FACTORY = 'patch_Module'; // match hvcc's generated global
 
   const RECEIVER_NAMES = {
     note: 'note',
@@ -596,7 +545,7 @@
     gate: 'gate',
     bend: 'bend',
     program: 'program',
-    ccPrefix: 'cc' // becomes cc0, cc1, ... cc127
+    ccPrefix: 'cc' // becomes cc0, cc1, - cc127
   };
 
   function loadScriptOnce(url) {
@@ -623,7 +572,7 @@
       this.ctx = audioContext;
 
       const loaded = await loadScriptOnce(PATCH_JS_URL);
-      if (!loaded) return false; // pd/patch.js doesn't exist yet — expected until you add one
+      if (!loaded) return false;
 
       const factory = window[PATCH_MODULE_FACTORY];
       if (typeof factory !== 'function') return false;
@@ -657,10 +606,6 @@
       }
     }
 
-    // Note: this hvcc loader interface is not sample-accurate from the
-    // outside (no lookahead timestamp support like a raw AudioWorklet
-    // message port would give you) — values are applied as soon as they're
-    // sent, so timing rides on how promptly the scheduler below calls these.
     noteOn(channel, note, velocity) {
       this._param(RECEIVER_NAMES.velocity, velocity / 127);
       this._param(RECEIVER_NAMES.note, note);
@@ -683,12 +628,7 @@
     }
   }
 
-  /* =======================================================================
-     4. SCHEDULER
-     Lookahead scheduler: a timer wakes up frequently and dispatches any
-     events that fall inside the next window, riding on audioContext time
-     rather than setTimeout jitter.
-     ======================================================================= */
+  /* SCHEDULER */
   const LOOKAHEAD_MS = 25;
   const SCHEDULE_AHEAD_S = 0.1;
 
@@ -771,13 +711,7 @@
     }
   }
 
-  /* =======================================================================
-     4b. STEP PLAYER (play mode)
-     Groups noteOn events into chords (any notes within STEP_EPSILON seconds
-     of each other count as one step) so the harmony/melody stays pre-set
-     while the person controls *when* each chord fires by pressing a button.
-     Each advance() releases the previous step's notes and sounds the next.
-     ======================================================================= */
+  /*  STEP PLAYER (play mode) */
   const STEP_EPSILON_S = 0.04;
 
   class StepPlayer {
@@ -809,7 +743,7 @@
         this.steps[this.index].notes.forEach(n => this.engine.noteOff(n.channel, n.note));
       }
     }
-    // Returns { step, index, total, finished }. step is null once finished.
+    // Returns { step, index, total, finished }
     advance() {
       this._releaseCurrent();
       this.index++;
@@ -827,9 +761,7 @@
     }
   }
 
-  /* =======================================================================
-     5. APP — drag & drop, transport UI, wiring
-     ======================================================================= */
+  /* APP — drag & drop, transport UI, wiring */
   const dropzone = document.getElementById('dropzone');
   const dropzoneLabel = document.getElementById('dropzone-label');
   const fileInput = document.getElementById('file-input');
@@ -870,7 +802,7 @@
   let scheduler = null;
   let stepPlayer = null;
   let seekDragging = false;
-  let mode = 'listen'; // 'listen' | 'play'
+  let mode = 'listen'; // 'listen', 'play'
   let midiEnabled = false;
   let midiInputs = [];
 
@@ -911,10 +843,7 @@
     return engine;
   }
 
-  // --- WebMIDI.js ------------------------------------------------------------
-  // Any MIDI note-on received while in play mode advances the current chord.
-  // Note-on with velocity 0 is treated by WebMIDI.js as note-off, so it will
-  // not advance the step player.
+  // WebMIDI.js
   function handleMidiNoteOn(e) {
     if (mode !== 'play' || !stepPlayer || !audioCtx) return;
     triggerNextChord('MIDI');
@@ -1037,7 +966,7 @@
     applyMode();
   }
 
-  // --- mode toggle -----------------------------------------------------------
+  // mode toggle
   function applyMode() {
     const isPlayMode = mode === 'play';
     modeToggle.classList.toggle('play-active', isPlayMode);
@@ -1056,8 +985,6 @@
 
   function switchMode(next) {
     if (mode === next) return;
-    // Fully silence whichever engine of interaction was active before
-    // switching, so nothing keeps sounding underneath the new mode.
     if (scheduler) scheduler.stop();
     if (stepPlayer) stepPlayer.stopAll();
     if (engine) engine.allNotesOff();
@@ -1073,7 +1000,7 @@
   modeListenBtn.addEventListener('click', () => switchMode('listen'));
   modePlayBtn.addEventListener('click', () => switchMode('play'));
 
-  // --- play mode ---------------------------------------------------------
+  // play mode
   nextBtn.addEventListener('click', () => triggerNextChord('button'));
 
   resetStepBtn.addEventListener('click', () => {
@@ -1083,7 +1010,7 @@
     stepCounter.textContent = '0 / ' + stepPlayer.total;
   });
 
-  // --- drag & drop ---------------------------------------------------------
+  // drag + drop
   ['dragenter', 'dragover'].forEach(evt =>
     dropzone.addEventListener(evt, e => {
       e.preventDefault();
@@ -1105,8 +1032,6 @@
     const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     loadFile(file);
   });
-  // Prevent the browser's default "open file" behaviour if a drop lands
-  // outside the dropzone itself.
   ['dragover', 'drop'].forEach(evt =>
     document.addEventListener(evt, e => e.preventDefault())
   );
@@ -1118,11 +1043,9 @@
   dropzone.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', e => loadFile(e.target.files[0]));
 
-  // MIDI permission is requested from the page after load. Browsers may require
-  // HTTPS (or localhost) for Web MIDI access.
   setupMidi();
 
-  // --- transport -------------------------------------------------------------
+  // transport
   playBtn.addEventListener('click', async () => {
     if (!scheduler) return;
     if (audioCtx.state === 'suspended') await audioCtx.resume();
