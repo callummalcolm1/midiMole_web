@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIDI - Stepper</title>
+<style>
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    color: #000000;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+
+  .wrap {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 64px 24px 96px;
+  }
+
+  h1 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    margin: 0 0 6px;
+  }
+
+  .sub {
+    font-size: 13px;
+    color: #444;
+    margin: 0 0 40px;
+    line-height: 1.5;
+  }
+
+  .mode-toggle {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border: 1px solid #000;
+    border-radius: 999px;
+    overflow: hidden;
+    margin-bottom: 8px;
+    max-width: 220px;
+  }
+
+  .mode-indicator {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 50%;
+    height: 100%;
+    background: #000;
+    transition: transform 0.18s ease;
+    z-index: 0;
+  }
+
+  .mode-toggle.play-active .mode-indicator {
+    transform: translateX(100%);
+  }
+
+  .mode-option {
+    position: relative;
+    z-index: 1;
+    background: none;
+    border: none;
+    color: #000;
+    font-family: inherit;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 10px 0;
+    cursor: pointer;
+    transition: color 0s ease;
+  }
+
+  .mode-option.active { color: #fff; }
+
+  .mode-hint {
+    font-size: 11px;
+    color: #777;
+    margin: 0 0 32px;
+  }
+
+  .play-mode {
+    margin-top: 24px;
+  }
+
+  .next-btn {
+    display: block;
+    width: 100%;
+    background: #fff;
+    border: 1px solid #000;
+    color: #000;
+    font-family: inherit;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 28px 16px;
+    cursor: pointer;
+  }
+
+  .next-btn:hover { background: #000; color: #fff; }
+  .next-btn:active { opacity: 0.7; }
+
+  .play-mode-row {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .step-counter {
+    font-family: 'Arial', monospace;
+    font-size: 12px;
+    color: #444;
+  }
+
+  .dropzone {
+    border: 1px solid #000;
+    padding: 48px 16px;
+    text-align: center;
+    transition: background 0.1s ease;
+    cursor: pointer;
+  }
+
+  .dropzone.drag-over {
+    background: #000;
+    color: #fff;
+  }
+
+  .dropzone.drag-over .link-btn {
+    color: #fff;
+    border-color: #fff;
+  }
+
+  .dropzone p {
+    margin: 0 0 12px;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+  }
+
+  .link-btn {
+    background: none;
+    border: none;
+    border-bottom: 1px solid #000;
+    color: #000;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 0 0 1px;
+  }
+
+  .link-btn:hover { opacity: 0.6; }
+
+  .panel {
+    margin-top: 24px;
+    border: 1px solid #000;
+    padding: 12px 16px;
+  }
+
+  .panel .row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    padding: 4px 0;
+  }
+
+  .panel .row:last-child { border-bottom: none; }
+
+  .panel .row span:first-child {
+    color: #777;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 10px;
+  }
+
+  .panel .row span:last-child {
+    font-family: 'Arial', monospace;
+    font-size: 12px;
+  }
+
+  .transport {
+    margin-top: 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .transport button {
+    background: #fff;
+    border: 1px solid #000;
+    color: #000;
+    font-family: inherit;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 10px 18px;
+    cursor: pointer;
+  }
+
+  .transport button:hover { background: #000; color: #fff; }
+  .transport button:active { opacity: 0.7; }
+  .transport button:disabled { opacity: 0.3; cursor: default; }
+  .transport button:disabled:hover { background: #fff; color: #000; }
+
+  .time {
+    font-family: 'Arial', monospace;
+    font-size: 12px;
+    min-width: 34px;
+  }
+
+  #seek {
+    flex: 1;
+    accent-color: #000;
+  }
+
+  .status {
+    margin-top: 32px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: #555;
+  }
+
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #bbb;
+    flex-shrink: 0;
+  }
+
+  .dot.ok { background: #000; }
+  .dot.fallback { background: #999; }
+
+  #log-wrap { margin-top: 24px; }
+
+  .log-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #777;
+    margin: 0 0 6px;
+  }
+
+  #log {
+    border: 1px solid #000;
+    height: 140px;
+    overflow-y: auto;
+    padding: 8px 10px;
+    font-family: 'Arial', monospace;
+    font-size: 11px;
+    line-height: 1.6;
+  }
+
+  #log div { white-space: nowrap; }
+
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+  <main class="wrap">
+
+    <h1>MIDI - Stepper</h1>
+    <p class="sub">Drag a .mid file in. Playback can be stepped or continuous.</p>
+
+    <div id="mode-toggle" class="mode-toggle" role="tablist">
+      <span id="mode-indicator" class="mode-indicator"></span>
+      <button id="mode-listen-btn" class="mode-option active" type="button" role="tab" aria-selected="true">listen</button>
+      <button id="mode-play-btn" class="mode-option" type="button" role="tab" aria-selected="false">play</button>
+    </div>
+    <p id="mode-hint" class="mode-hint">listen mode: plays the file straight through.</p>
+
+    <div id="dropzone" class="dropzone">
+      <p id="dropzone-label">drop a .mid file here</p>
+      <input type="file" id="file-input" accept=".mid,.midi" hidden>
+      <button id="browse-btn" class="link-btn" type="button">or choose a file</button>
+    </div>
+
+    <section id="file-info" class="panel hidden">
+      <div class="row"><span>file</span><span id="info-name">—</span></div>
+      <div class="row"><span>tracks</span><span id="info-tracks">—</span></div>
+      <div class="row"><span>tempo</span><span id="info-tempo">—</span></div>
+      <div class="row"><span>duration</span><span id="info-duration">—</span></div>
+    </section>
+
+    <section id="transport" class="transport hidden">
+      <button id="play-btn" type="button">start</button>
+      <button id="stop-btn" type="button">stop</button>
+      <span id="time-current" class="time">0:00</span>
+      <input id="seek" type="range" min="0" max="1000" value="0">
+      <span id="time-total" class="time">0:00</span>
+    </section>
+
+    <section id="play-mode-panel" class="play-mode hidden">
+      <button id="next-btn" class="next-btn" type="button">tap for next chord</button>
+      <div class="play-mode-row">
+        <span id="step-counter" class="step-counter">0 / 0</span>
+        <button id="reset-step-btn" class="link-btn" type="button">reset to start</button>
+      </div>
+    </section>
+
+
+
+    <section id="log-wrap" class="hidden">
+      <p class="log-title">events</p>
+      <div id="log"></div>
+    </section>
+
+  </main>
+
+<script src="https://cdn.jsdelivr.net/npm/webmidi@3.1.13/dist/iife/webmidi.iife.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* =======================================================================
+     1. MIDI PARSER
+     Standard MIDI File (SMF) format 0/1 parser. Produces a flat, time-sorted
+     event list in seconds, resolving tempo changes against the header's
+     ticks-per-quarter-note.
+     ======================================================================= */
+  const MidiParser = (function () {
+    function readVarLen(bytes, pos) {
+      let value = 0, b;
+      do {
+        b = bytes[pos++];
+        value = (value << 7) | (b & 0x7f);
+      } while (b & 0x80);
+      return { value, pos };
+    }
+
+    function parseMidi(arrayBuffer) {
+      const bytes = new Uint8Array(arrayBuffer);
+      let pos = 0;
+
+      function str(len) {
+        let s = '';
+        for (let i = 0; i < len; i++) s += String.fromCharCode(bytes[pos + i]);
+        pos += len;
+        return s;
+      }
+      function u32() {
+        const v = (bytes[pos] << 24) | (bytes[pos + 1] << 16) | (bytes[pos + 2] << 8) | bytes[pos + 3];
+        pos += 4;
+        return v >>> 0;
+      }
+      function u16() {
+        const v = (bytes[pos] << 8) | bytes[pos + 1];
+        pos += 2;
+        return v;
+      }
+
+      if (str(4) !== 'MThd') throw new Error('Not a MIDI file (missing MThd header)');
+      const headerLen = u32();
+      const formatType = u16();
+      const trackCount = u16();
+      const division = u16();
+      pos += headerLen - 6;
+
+      if (division & 0x8000) throw new Error('SMPTE time division is not supported');
+      const ticksPerQuarter = division;
+
+      const tempoMap = [{ tick: 0, usecPerQuarter: 500000 }];
+      const rawTracks = [];
+
+      for (let t = 0; t < trackCount; t++) {
+        if (str(4) !== 'MTrk') throw new Error('Malformed track chunk');
+        const len = u32();
+        const end = pos + len;
+        const events = [];
+        let tick = 0;
+        let runningStatus = null;
+
+        while (pos < end) {
+          const dt = readVarLen(bytes, pos);
+          pos = dt.pos;
+          tick += dt.value;
+
+          let statusByte = bytes[pos];
+          if (statusByte & 0x80) { runningStatus = statusByte; pos++; }
+          else { statusByte = runningStatus; }
+
+          const type = statusByte & 0xf0;
+          const channel = statusByte & 0x0f;
+
+          if (statusByte === 0xff) {
+            const metaType = bytes[pos++];
+            const len2 = readVarLen(bytes, pos);
+            pos = len2.pos;
+            const data = bytes.slice(pos, pos + len2.value);
+            pos += len2.value;
+            if (metaType === 0x51 && data.length === 3) {
+              const usecPerQuarter = (data[0] << 16) | (data[1] << 8) | data[2];
+              tempoMap.push({ tick, usecPerQuarter });
+            } else if (metaType === 0x2f) {
+              events.push({ tick, type: 'endOfTrack' });
+            }
+          } else if (statusByte === 0xf0 || statusByte === 0xf7) {
+            const len2 = readVarLen(bytes, pos);
+            pos = len2.pos + len2.value;
+          } else if (type === 0x90) {
+            const note = bytes[pos++], velocity = bytes[pos++];
+            events.push(velocity === 0
+              ? { tick, type: 'noteOff', channel, note }
+              : { tick, type: 'noteOn', channel, note, velocity });
+          } else if (type === 0x80) {
+            const note = bytes[pos++], velocity = bytes[pos++];
+            events.push({ tick, type: 'noteOff', channel, note, velocity });
+          } else if (type === 0xa0) {
+            pos += 2;
+          } else if (type === 0xb0) {
+            const controller = bytes[pos++], value = bytes[pos++];
+            events.push({ tick, type: 'controlChange', channel, controller, value });
+          } else if (type === 0xc0) {
+            const program = bytes[pos++];
+            events.push({ tick, type: 'programChange', channel, program });
+          } else if (type === 0xd0) {
+            pos += 1;
+          } else if (type === 0xe0) {
+            const lsb = bytes[pos++], msb = bytes[pos++];
+            events.push({ tick, type: 'pitchBend', channel, bend: ((msb << 7) | lsb) - 8192 });
+          } else {
+            break; // unknown status — bail out of this track rather than loop forever
+          }
+        }
+        rawTracks.push(events);
+        pos = end;
+      }
+
+      tempoMap.sort((a, b) => a.tick - b.tick);
+
+      function tickToSeconds(tick) {
+        let seconds = 0, lastTick = 0, usecPerQuarter = tempoMap[0].usecPerQuarter;
+        for (let i = 0; i < tempoMap.length; i++) {
+          const seg = tempoMap[i];
+          if (seg.tick >= tick) break;
+          seconds += ((seg.tick - lastTick) * usecPerQuarter) / ticksPerQuarter / 1e6;
+          lastTick = seg.tick;
+          usecPerQuarter = seg.usecPerQuarter;
+        }
+        seconds += ((tick - lastTick) * usecPerQuarter) / ticksPerQuarter / 1e6;
+        return seconds;
+      }
+
+      const events = [];
+      rawTracks.forEach((trackEvents, trackIndex) => {
+        trackEvents.forEach(e => {
+          if (e.type === 'endOfTrack') return;
+          events.push(Object.assign({}, e, { time: tickToSeconds(e.tick), track: trackIndex }));
+        });
+      });
+      events.sort((a, b) => a.time - b.time);
+
+      const duration = events.reduce((max, e) => Math.max(max, e.time), 0);
+      const initialBpm = Math.round(60000000 / tempoMap[0].usecPerQuarter);
+
+      return { formatType, trackCount, ticksPerQuarter, events, duration, initialBpm };
+    }
+
+    return { parseMidi };
+  })();
+
+  /* =======================================================================
+     2. FALLBACK SYNTH ENGINE
+     Plain WebAudio oscillator synth. Same interface as PdWasmEngine below,
+     used whenever a compiled patch isn't found, so the page always makes
+     sound.
+     ======================================================================= */
+  class FallbackSynthEngine {
+    constructor() {
+      this.name = 'fallback synth';
+      this.isFallback = true;
+      // voicesByKey: the *current* voice for a given channel+note, used to
+      // resolve an incoming noteOff to the right oscillator.
+      this.voicesByKey = new Map();
+      // allVoices: every voice that's still live, full stop. A note can be
+      // retriggered (a new noteOn for the same pitch before its noteOff
+      // arrives) — the old voice gets overwritten in voicesByKey but must
+      // still be tracked somewhere, or it leaks and drones on forever,
+      // invisible to allNotesOff(). This set is that somewhere.
+      this.allVoices = new Set();
+    }
+    async init(audioContext) {
+      this.ctx = audioContext;
+      this.master = this.ctx.createGain();
+      this.master.gain.value = 0.25;
+      this.master.connect(this.ctx.destination);
+      return true;
+    }
+    _key(channel, note) { return channel + ':' + note; }
+    _freq(note) { return 440 * Math.pow(2, (note - 69) / 12); }
+    noteOn(channel, note, velocity, time) {
+      const t = time != null ? time : this.ctx.currentTime;
+      const key = this._key(channel, note);
+
+      // Retrigger: a voice is already sounding at this pitch. Cut it off
+      // quickly rather than letting it get silently orphaned.
+      const existing = this.voicesByKey.get(key);
+      if (existing) this._release(existing, t, 0.015);
+
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(this._freq(note), t);
+      const peak = Math.max(0.001, (velocity / 127) * 0.5);
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(peak, t + 0.01);
+      gain.gain.linearRampToValueAtTime(peak * 0.6, t + 0.15);
+      osc.connect(gain).connect(this.master);
+      osc.start(t);
+
+      const voice = { osc, gain };
+      osc.addEventListener('ended', () => {
+        this.allVoices.delete(voice);
+        if (this.voicesByKey.get(key) === voice) this.voicesByKey.delete(key);
+      });
+
+      this.voicesByKey.set(key, voice);
+      this.allVoices.add(voice);
+    }
+    noteOff(channel, note, time) {
+      const t = time != null ? time : this.ctx.currentTime;
+      const key = this._key(channel, note);
+      const voice = this.voicesByKey.get(key);
+      if (!voice) return;
+      this._release(voice, t, 0.08);
+      this.voicesByKey.delete(key);
+    }
+    _release(voice, time, rampSeconds) {
+      try {
+        voice.gain.gain.cancelScheduledValues(time);
+        voice.gain.gain.setValueAtTime(voice.gain.gain.value, time);
+        voice.gain.gain.linearRampToValueAtTime(0, time + rampSeconds);
+        voice.osc.stop(time + rampSeconds + 0.01);
+      } catch (e) { /* already stopped — fine */ }
+    }
+    controlChange() {}
+    programChange() {}
+    pitchBend() {}
+    allNotesOff() {
+      const now = this.ctx.currentTime;
+      // Snapshot first: _release -> the 'ended' listener can mutate
+      // allVoices mid-iteration otherwise.
+      const voices = Array.from(this.allVoices);
+      voices.forEach(voice => this._release(voice, now, 0.05));
+      this.allVoices.clear();
+      this.voicesByKey.clear();
+    }
+  }
+
+  /* =======================================================================
+     3. PD-WASM ENGINE (hvcc / Heavy)
+     -----------------------------------------------------------------------
+     hvcc's WebAudio/JS generator (https://wasted-audio.github.io/hvcc/) does
+     NOT compile a .pd file to wasm in the browser — you run hvcc offline:
+
+         hvcc patch.pd -g js -o build/
+
+     ...which emits an Emscripten module (here: pd/patch.js) exposing a
+     global factory function, conventionally named "<patchName>_Module".
+     Calling that factory gives you a heavyModule with an AudioLibLoader
+     class on it. That loader is what actually talks to the patch:
+
+         const heavyModule = await patch_Module();
+         const loader = new heavyModule.AudioLibLoader();
+         await loader.init({ blockSize: 128, webAudioContext: audioCtx, ... });
+         loader.start();
+         loader.webAudioWorklet.connect(audioCtx.destination);
+
+     Sending values IN to the patch is done by name, matching whatever
+     [r somename] / [receive somename] objects exist in your .pd patch —
+     there's no generic "send a MIDI note" call, because Heavy doesn't know
+     your patch's structure beyond its named receivers. Two loader shapes
+     exist depending on hvcc/export version, so we try both:
+
+         loader.sendFloatParameterToWorklet(name, value)   // newer, AudioWorklet-based
+         loader.audiolib.setFloatParameter(name, value)    // older, ScriptProcessor-based
+
+     This engine assumes your patch exposes receivers called "note",
+     "velocity", "gate", "bend", "program", and "cc0".."cc127" — rename the
+     RECEIVER_NAMES below to match your actual patch.
+     ======================================================================= */
+
+  const PATCH_JS_URL = 'pd/patch.js';       // hvcc's exported Emscripten glue file
+  const PATCH_MODULE_FACTORY = 'patch_Module'; // must match hvcc's generated global
+
+  const RECEIVER_NAMES = {
+    note: 'note',
+    velocity: 'velocity',
+    gate: 'gate',
+    bend: 'bend',
+    program: 'program',
+    ccPrefix: 'cc' // becomes cc0, cc1, ... cc127
+  };
+
+  function loadScriptOnce(url) {
+    return new Promise((resolve) => {
+      const existing = document.querySelector('script[data-dynamic-src="' + url + '"]');
+      if (existing) { resolve(true); return; }
+      const script = document.createElement('script');
+      script.src = url;
+      script.dataset.dynamicSrc = url;
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.head.appendChild(script);
+    });
+  }
+
+  class PdWasmEngine {
+    constructor() {
+      this.name = 'pd.wasm patch (hvcc)';
+      this.isFallback = false;
+      this.loader = null;
+    }
+
+    async init(audioContext) {
+      this.ctx = audioContext;
+
+      const loaded = await loadScriptOnce(PATCH_JS_URL);
+      if (!loaded) return false; // pd/patch.js doesn't exist yet — expected until you add one
+
+      const factory = window[PATCH_MODULE_FACTORY];
+      if (typeof factory !== 'function') return false;
+
+      try {
+        const heavyModule = await factory();
+        this.loader = new heavyModule.AudioLibLoader();
+        await this.loader.init({
+          blockSize: 128,
+          webAudioContext: this.ctx,
+          printHook: (msg) => console.log('[pd]', msg),
+          sendHook: (name, val) => console.log('[pd send]', name, val)
+        });
+        this.loader.start();
+        if (this.loader.webAudioWorklet) {
+          this.loader.webAudioWorklet.connect(this.ctx.destination);
+        }
+        return true;
+      } catch (err) {
+        console.warn('[PdWasmEngine] failed to initialize compiled patch:', err);
+        return false;
+      }
+    }
+
+    _param(name, value) {
+      if (!this.loader) return;
+      if (this.loader.webAudioWorklet && this.loader.sendFloatParameterToWorklet) {
+        this.loader.sendFloatParameterToWorklet(name, value);
+      } else if (this.loader.audiolib) {
+        this.loader.audiolib.setFloatParameter(name, value);
+      }
+    }
+
+    // Note: this hvcc loader interface is not sample-accurate from the
+    // outside (no lookahead timestamp support like a raw AudioWorklet
+    // message port would give you) — values are applied as soon as they're
+    // sent, so timing rides on how promptly the scheduler below calls these.
+    noteOn(channel, note, velocity) {
+      this._param(RECEIVER_NAMES.velocity, velocity / 127);
+      this._param(RECEIVER_NAMES.note, note);
+      this._param(RECEIVER_NAMES.gate, 1);
+    }
+    noteOff() {
+      this._param(RECEIVER_NAMES.gate, 0);
+    }
+    controlChange(channel, controller, value) {
+      this._param(RECEIVER_NAMES.ccPrefix + controller, value / 127);
+    }
+    programChange(channel, program) {
+      this._param(RECEIVER_NAMES.program, program);
+    }
+    pitchBend(channel, value) {
+      this._param(RECEIVER_NAMES.bend, value / 8192);
+    }
+    allNotesOff() {
+      this._param(RECEIVER_NAMES.gate, 0);
+    }
+  }
+
+  /* =======================================================================
+     4. SCHEDULER
+     Lookahead scheduler: a timer wakes up frequently and dispatches any
+     events that fall inside the next window, riding on audioContext time
+     rather than setTimeout jitter.
+     ======================================================================= */
+  const LOOKAHEAD_MS = 25;
+  const SCHEDULE_AHEAD_S = 0.1;
+
+  class MidiScheduler {
+    constructor(audioContext, engine, events, onProgress, onLog) {
+      this.ctx = audioContext;
+      this.engine = engine;
+      this.events = events;
+      this.onProgress = onProgress || function () {};
+      this.onLog = onLog || function () {};
+      this.playing = false;
+      this.nextEventIndex = 0;
+      this.startCtxTime = 0;
+      this.startOffset = 0;
+      this.timer = null;
+    }
+    seek(offsetSeconds) {
+      this.startOffset = offsetSeconds;
+      this.nextEventIndex = this.events.findIndex(e => e.time >= offsetSeconds);
+      if (this.nextEventIndex === -1) this.nextEventIndex = this.events.length;
+    }
+    play() {
+      if (this.playing) return;
+      this.playing = true;
+      this.startCtxTime = this.ctx.currentTime;
+      this._tick();
+      this.timer = setInterval(() => this._tick(), LOOKAHEAD_MS);
+    }
+    pause() {
+      this.playing = false;
+      if (this.timer) clearInterval(this.timer);
+      this.startOffset = this._elapsed();
+      this.engine.allNotesOff();
+    }
+    stop() {
+      this.playing = false;
+      if (this.timer) clearInterval(this.timer);
+      this.engine.allNotesOff();
+      this.nextEventIndex = 0;
+      this.startOffset = 0;
+      this.onProgress(0);
+    }
+    _elapsed() { return this.startOffset + (this.ctx.currentTime - this.startCtxTime); }
+    _tick() {
+      const elapsed = this._elapsed();
+      const horizon = elapsed + SCHEDULE_AHEAD_S;
+      while (this.nextEventIndex < this.events.length && this.events[this.nextEventIndex].time <= horizon) {
+        const e = this.events[this.nextEventIndex];
+        const audioTime = this.ctx.currentTime + (e.time - elapsed);
+        this._dispatch(e, Math.max(audioTime, this.ctx.currentTime));
+        this.nextEventIndex++;
+      }
+      this.onProgress(elapsed);
+      if (this.nextEventIndex >= this.events.length && elapsed >= this._duration()) this.stop();
+    }
+    _duration() { return this.events.length ? this.events[this.events.length - 1].time : 0; }
+    _dispatch(e, time) {
+      switch (e.type) {
+        case 'noteOn':
+          this.engine.noteOn(e.channel, e.note, e.velocity, time);
+          this.onLog(`note on  ch${e.channel} n${e.note} v${e.velocity}`);
+          break;
+        case 'noteOff':
+          this.engine.noteOff(e.channel, e.note, time);
+          this.onLog(`note off ch${e.channel} n${e.note}`);
+          break;
+        case 'controlChange':
+          this.engine.controlChange(e.channel, e.controller, e.value, time);
+          this.onLog(`cc       ch${e.channel} c${e.controller} v${e.value}`);
+          break;
+        case 'programChange':
+          this.engine.programChange(e.channel, e.program, time);
+          this.onLog(`program  ch${e.channel} p${e.program}`);
+          break;
+        case 'pitchBend':
+          this.engine.pitchBend(e.channel, e.bend, time);
+          this.onLog(`bend     ch${e.channel} ${e.bend}`);
+          break;
+      }
+    }
+  }
+
+  /* =======================================================================
+     4b. STEP PLAYER (play mode)
+     Groups noteOn events into chords (any notes within STEP_EPSILON seconds
+     of each other count as one step) so the harmony/melody stays pre-set
+     while the person controls *when* each chord fires by pressing a button.
+     Each advance() releases the previous step's notes and sounds the next.
+     ======================================================================= */
+  const STEP_EPSILON_S = 0.04;
+
+  class StepPlayer {
+    constructor(engine, events) {
+      this.engine = engine;
+      this.steps = this._groupSteps(events);
+      this.index = -1; // -1 = nothing played yet
+    }
+    _groupSteps(events) {
+      const noteOns = events.filter(e => e.type === 'noteOn');
+      const steps = [];
+      noteOns.forEach(e => {
+        const last = steps[steps.length - 1];
+        if (last && (e.time - last.time) <= STEP_EPSILON_S) {
+          last.notes.push(e);
+        } else {
+          steps.push({ time: e.time, notes: [e] });
+        }
+      });
+      return steps;
+    }
+    get total() { return this.steps.length; }
+    reset() {
+      this._releaseCurrent();
+      this.index = -1;
+    }
+    _releaseCurrent() {
+      if (this.index >= 0 && this.index < this.steps.length) {
+        this.steps[this.index].notes.forEach(n => this.engine.noteOff(n.channel, n.note));
+      }
+    }
+    // Returns { step, index, total, finished }. step is null once finished.
+    advance() {
+      this._releaseCurrent();
+      this.index++;
+      if (this.index >= this.steps.length) {
+        return { step: null, index: this.steps.length, total: this.steps.length, finished: true };
+      }
+      const step = this.steps[this.index];
+      step.notes.forEach(n => this.engine.noteOn(n.channel, n.note, n.velocity));
+      return { step, index: this.index, total: this.steps.length, finished: false };
+    }
+    stopAll() {
+      this._releaseCurrent();
+      this.engine.allNotesOff();
+      this.index = -1;
+    }
+  }
+
+  /* =======================================================================
+     5. APP — drag & drop, transport UI, wiring
+     ======================================================================= */
+  const dropzone = document.getElementById('dropzone');
+  const dropzoneLabel = document.getElementById('dropzone-label');
+  const fileInput = document.getElementById('file-input');
+  const browseBtn = document.getElementById('browse-btn');
+
+  const fileInfo = document.getElementById('file-info');
+  const infoName = document.getElementById('info-name');
+  const infoTracks = document.getElementById('info-tracks');
+  const infoTempo = document.getElementById('info-tempo');
+  const infoDuration = document.getElementById('info-duration');
+
+  const transport = document.getElementById('transport');
+  const playBtn = document.getElementById('play-btn');
+  const stopBtn = document.getElementById('stop-btn');
+  const seek = document.getElementById('seek');
+  const timeCurrent = document.getElementById('time-current');
+  const timeTotal = document.getElementById('time-total');
+
+  const modeToggle = document.getElementById('mode-toggle');
+  const modeListenBtn = document.getElementById('mode-listen-btn');
+  const modePlayBtn = document.getElementById('mode-play-btn');
+  const modeHint = document.getElementById('mode-hint');
+
+  const playModePanel = document.getElementById('play-mode-panel');
+  const nextBtn = document.getElementById('next-btn');
+  const stepCounter = document.getElementById('step-counter');
+  const resetStepBtn = document.getElementById('reset-step-btn');
+
+  const engineDot = document.getElementById('engine-dot');
+  const engineLabel = document.getElementById('engine-label');
+
+  const logWrap = document.getElementById('log-wrap');
+  const log = document.getElementById('log');
+
+  let audioCtx = null;
+  let engine = null;
+  let parsed = null;
+  let scheduler = null;
+  let stepPlayer = null;
+  let seekDragging = false;
+  let mode = 'listen'; // 'listen' | 'play'
+  let midiEnabled = false;
+  let midiInputs = [];
+
+  function fmtTime(s) {
+    s = Math.max(0, s);
+    const m = Math.floor(s / 60);
+    const r = Math.floor(s % 60);
+    return m + ':' + String(r).padStart(2, '0');
+  }
+
+  function logLine(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    log.appendChild(div);
+    while (log.children.length > 200) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  async function ensureEngine() {
+    if (engine) return engine;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    const pdEngine = new PdWasmEngine();
+    let gotPd = false;
+    try { gotPd = await pdEngine.init(audioCtx); } catch (e) { gotPd = false; }
+
+    if (gotPd) {
+      engine = pdEngine;
+      engineDot.classList.add('ok');
+      engineLabel.textContent = 'sound engine: pd.wasm patch';
+    } else {
+      const fallback = new FallbackSynthEngine();
+      await fallback.init(audioCtx);
+      engine = fallback;
+      engineDot.classList.add('fallback');
+      engineLabel.textContent = 'sound engine: fallback synth — no compiled patch found at pd/patch.js';
+    }
+    return engine;
+  }
+
+  // --- WebMIDI.js ------------------------------------------------------------
+  // Any MIDI note-on received while in play mode advances the current chord.
+  // Note-on with velocity 0 is treated by WebMIDI.js as note-off, so it will
+  // not advance the step player.
+  function handleMidiNoteOn(e) {
+    if (mode !== 'play' || !stepPlayer || !audioCtx) return;
+    triggerNextChord('MIDI');
+  }
+
+  async function setupMidi() {
+    if (!window.WebMidi) {
+      logLine('MIDI: WebMIDI.js failed to load');
+      return;
+    }
+
+    try {
+      await WebMidi.enable();
+
+      midiEnabled = true;
+      midiInputs = WebMidi.inputs.slice();
+
+      midiInputs.forEach(input => {
+        input.addListener('noteon', handleMidiNoteOn);
+      });
+
+      if (midiInputs.length) {
+        logLine(`MIDI: listening to ${midiInputs.length} input${midiInputs.length === 1 ? '' : 's'}`);
+      } else {
+        logLine('MIDI: enabled — no input devices found');
+      }
+
+      WebMidi.addListener('connected', () => {
+        midiInputs = WebMidi.inputs.slice();
+        midiInputs.forEach(input => {
+          input.addListener('noteon', handleMidiNoteOn);
+        });
+        logLine(`MIDI: connected — ${input.name || 'device'}`);
+      });
+
+      WebMidi.addListener('disconnected', () => {
+        midiInputs = WebMidi.inputs.slice();
+        logLine('MIDI: input disconnected');
+      });
+    } catch (err) {
+      midiEnabled = false;
+      logLine('MIDI: unavailable — ' + err.message);
+      console.warn('[MIDI] WebMIDI.js could not be enabled:', err);
+    }
+  }
+
+  async function triggerNextChord(source) {
+    if (!stepPlayer || !audioCtx) return;
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+    const result = stepPlayer.advance();
+    if (result.finished) {
+      nextBtn.textContent = 'start over';
+      stepCounter.textContent = result.total + ' / ' + result.total;
+      if (source === 'MIDI') logLine('MIDI: reached end — press reset to start over');
+      return;
+    }
+
+    nextBtn.textContent = 'tap for next chord';
+    stepCounter.textContent = (result.index + 1) + ' / ' + result.total;
+
+    result.step.notes.forEach(n =>
+      logLine(`${source}: step ${result.index + 1}: note on ch${n.channel} n${n.note} v${n.velocity}`)
+    );
+  }
+
+  async function loadFile(file) {
+    if (!file) return;
+    if (!/\.(mid|midi)$/i.test(file.name)) {
+      dropzoneLabel.textContent = 'that\u2019s not a .mid file — try again';
+      return;
+    }
+    let buf, parsedResult;
+    try {
+      buf = await file.arrayBuffer();
+      parsedResult = MidiParser.parseMidi(buf);
+    } catch (err) {
+      dropzoneLabel.textContent = 'couldn\u2019t read that file: ' + err.message;
+      console.error(err);
+      return;
+    }
+    parsed = parsedResult;
+
+    dropzoneLabel.textContent = 'drop a .mid file here';
+    infoName.textContent = file.name;
+    infoTracks.textContent = parsed.trackCount + (parsed.trackCount === 1 ? ' track' : ' tracks');
+    infoTempo.textContent = parsed.initialBpm + ' bpm';
+    infoDuration.textContent = fmtTime(parsed.duration);
+    fileInfo.classList.remove('hidden');
+    transport.classList.remove('hidden');
+    logWrap.classList.remove('hidden');
+    log.innerHTML = '';
+    seek.value = 0;
+    timeCurrent.textContent = '0:00';
+    timeTotal.textContent = fmtTime(parsed.duration);
+    playBtn.textContent = 'start';
+
+    await ensureEngine();
+
+    if (scheduler) scheduler.stop();
+    if (stepPlayer) stepPlayer.stopAll();
+
+    scheduler = new MidiScheduler(
+      audioCtx,
+      engine,
+      parsed.events,
+      (elapsed) => {
+        if (!seekDragging) seek.value = Math.min(1000, (elapsed / parsed.duration) * 1000 || 0);
+        timeCurrent.textContent = fmtTime(elapsed);
+        if (!scheduler.playing) playBtn.textContent = 'start';
+      },
+      logLine
+    );
+
+    stepPlayer = new StepPlayer(engine, parsed.events);
+    nextBtn.textContent = 'tap for next chord';
+    nextBtn.disabled = stepPlayer.total === 0;
+    stepCounter.textContent = '0 / ' + stepPlayer.total;
+
+    applyMode();
+  }
+
+  // --- mode toggle -----------------------------------------------------------
+  function applyMode() {
+    const isPlayMode = mode === 'play';
+    modeToggle.classList.toggle('play-active', isPlayMode);
+    modeListenBtn.classList.toggle('active', !isPlayMode);
+    modePlayBtn.classList.toggle('active', isPlayMode);
+    modeListenBtn.setAttribute('aria-selected', String(!isPlayMode));
+    modePlayBtn.setAttribute('aria-selected', String(isPlayMode));
+    modeHint.textContent = isPlayMode
+      ? 'play mode: tap the button to trigger each chord/note yourself.'
+      : 'listen mode: plays the file straight through.';
+
+    const hasFile = !!parsed;
+    transport.classList.toggle('hidden', !hasFile || isPlayMode);
+    playModePanel.classList.toggle('hidden', !hasFile || !isPlayMode);
+  }
+
+  function switchMode(next) {
+    if (mode === next) return;
+    // Fully silence whichever engine of interaction was active before
+    // switching, so nothing keeps sounding underneath the new mode.
+    if (scheduler) scheduler.stop();
+    if (stepPlayer) stepPlayer.stopAll();
+    if (engine) engine.allNotesOff();
+    playBtn.textContent = 'start';
+    if (stepPlayer) {
+      nextBtn.textContent = 'tap for next chord';
+      stepCounter.textContent = '0 / ' + stepPlayer.total;
+    }
+    mode = next;
+    applyMode();
+  }
+
+  modeListenBtn.addEventListener('click', () => switchMode('listen'));
+  modePlayBtn.addEventListener('click', () => switchMode('play'));
+
+  // --- play mode ---------------------------------------------------------
+  nextBtn.addEventListener('click', () => triggerNextChord('button'));
+
+  resetStepBtn.addEventListener('click', () => {
+    if (!stepPlayer) return;
+    stepPlayer.stopAll();
+    nextBtn.textContent = 'tap for next chord';
+    stepCounter.textContent = '0 / ' + stepPlayer.total;
+  });
+
+  // --- drag & drop ---------------------------------------------------------
+  ['dragenter', 'dragover'].forEach(evt =>
+    dropzone.addEventListener(evt, e => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.add('drag-over');
+    })
+  );
+  ['dragleave'].forEach(evt =>
+    dropzone.addEventListener(evt, e => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.remove('drag-over');
+    })
+  );
+  dropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropzone.classList.remove('drag-over');
+    const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    loadFile(file);
+  });
+  // Prevent the browser's default "open file" behaviour if a drop lands
+  // outside the dropzone itself.
+  ['dragover', 'drop'].forEach(evt =>
+    document.addEventListener(evt, e => e.preventDefault())
+  );
+
+  browseBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    fileInput.click();
+  });
+  dropzone.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', e => loadFile(e.target.files[0]));
+
+  // MIDI permission is requested from the page after load. Browsers may require
+  // HTTPS (or localhost) for Web MIDI access.
+  setupMidi();
+
+  // --- transport -------------------------------------------------------------
+  playBtn.addEventListener('click', async () => {
+    if (!scheduler) return;
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    if (scheduler.playing) {
+      scheduler.pause();
+      playBtn.textContent = 'start';
+    } else {
+      scheduler.play();
+      playBtn.textContent = 'pause';
+    }
+  });
+
+  stopBtn.addEventListener('click', () => {
+    if (!scheduler) return;
+    scheduler.stop();
+    playBtn.textContent = 'start';
+  });
+
+  seek.addEventListener('mousedown', () => { seekDragging = true; });
+  seek.addEventListener('touchstart', () => { seekDragging = true; });
+  seek.addEventListener('change', () => {
+    if (!scheduler || !parsed) return;
+    const wasPlaying = scheduler.playing;
+    scheduler.pause();
+    scheduler.seek((seek.value / 1000) * parsed.duration);
+    timeCurrent.textContent = fmtTime((seek.value / 1000) * parsed.duration);
+    if (wasPlaying) scheduler.play();
+    seekDragging = false;
+  });
+
+})();
+</script>
+</body>
+</html>
